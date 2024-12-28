@@ -1,0 +1,307 @@
+# Define common volumes for Mautic services
+x-mautic-volumes: &mautic-volumes
+  - ./volumes/mautic/config:/var/www/html/config:z
+  - ./volumes/mautic/logs:/var/www/html/var/logs:z
+  - ./volumes/mautic/media/files:/var/www/html/docroot/media/files:z
+  - ./volumes/mautic/media/images:/var/www/html/docroot/media/images:z
+  - ./volumes/mautic/cron:/opt/mautic/cron:z
+  - ./volumes/mautic/ip_data:/var/www/html/var/cache/prod/ip_data:z
+  - ./GeoIP.conf:/var/www/html/config/GeoIP.conf
+  - ./mautic_web-entrypoint_custom.sh:/entrypoint_custom_web.sh
+  - ./mautic_cron-entrypoint_custom.sh:/entrypoint_custom_cron.sh
+  - ./mautic_cron-updateifchanged.sh:/mautic_cron-updateifchanged.sh
+  #- ./postfix/cert/postfix_cert.pem:/usr/local/share/ca-certificates/postfix_cert.crt
+
+services:
+  # MySQL Database Service
+  db:
+    image: mysql:8.0
+    hostname: ${MYSQL_HOST}
+    container_name: ${COMPOSE_PROJECT_NAME}-db
+    restart: unless-stopped
+    environment:
+      - SHELL=/bin/bash
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_DATABASE=${MYSQL_DATABASE}
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+    volumes:
+      - ./volumes/mysql:/var/lib/mysql
+    healthcheck:
+      test: mysqladmin --user=$$MYSQL_USER --password=$$MYSQL_PASSWORD ping
+      start_period: 360s
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+    networks:
+      - mautic_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # RabbitMQ Message Broker
+  rabbitmq:
+    image: rabbitmq:3-management
+    hostname: rabbitmq
+    container_name: ${COMPOSE_PROJECT_NAME}-rabbitmq
+    restart: unless-stopped
+    environment:
+      - SHELL=/bin/bash
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_DEFAULT_USER}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_DEFAULT_PASS}
+      - RABBITMQ_DEFAULT_VHOST=${RABBITMQ_DEFAULT_VHOST}
+    ports:
+      - "${RABBITMQ_NODE_PORT:-5672}:5672"
+      - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    volumes:
+      - ./volumes/rabbitmq:/var/lib/rabbitmq
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      start_period: 360s
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - mautic_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Mautic Web Application
+  mautic_web:
+    image: mautic/mautic:5.2.1-apache
+    container_name: ${COMPOSE_PROJECT_NAME}-mautic_web
+    hostname: mautic-web
+    restart: unless-stopped
+    links:
+      - db:mysql
+    ports:
+      - "8083:80"
+    volumes: *mautic-volumes
+    environment:
+      - SHELL=/bin/bash
+      - DOCKER_MAUTIC_ROLE=mautic_web
+      - PHP_INI_VALUE_MEMORY_LIMIT=1536M
+      - PHP_INI_VALUE_MAX_EXECUTION_TIME=300
+    env_file:
+      - .mautic_env
+    command: ["/entrypoint_custom_web.sh"]
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      start_period: 360s
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      postfix:
+        condition: service_healthy
+    networks:
+      - mautic_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Mautic Cron Service
+  mautic_cron:
+    image: mautic/mautic:5.2.1-apache
+    container_name: ${COMPOSE_PROJECT_NAME}-mautic_cron
+    restart: unless-stopped
+    links:
+      - db:mysql
+    volumes: *mautic-volumes
+    environment:
+      - SHELL=/bin/bash
+      - DOCKER_MAUTIC_ROLE=mautic_cron
+      - PHP_INI_VALUE_MEMORY_LIMIT=1536M
+      - PHP_INI_VALUE_MAX_EXECUTION_TIME=300
+    env_file:
+      - .mautic_env
+    command: ["/entrypoint_custom_cron.sh"]
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.25'
+          memory: 512M
+    depends_on:
+      mautic_web:
+        condition: service_healthy
+    networks:
+      - mautic_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Mautic Worker Service
+  mautic_worker:
+    image: mautic/mautic:5.2.1-apache
+    restart: unless-stopped
+    links:
+      - db:mysql
+    volumes: *mautic-volumes
+    environment:
+      - SHELL=/bin/bash
+      - PHP_INI_VALUE_MEMORY_LIMIT=1536M
+      - DOCKER_MAUTIC_ROLE=mautic_worker
+      - DOCKER_MAUTIC_WORKERS_CONSUME_EMAIL=2
+      - DOCKER_MAUTIC_WORKERS_CONSUME_HIT=2
+      - DOCKER_MAUTIC_WORKERS_CONSUME_FAILED=2
+    env_file:
+      - .mautic_env
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+    depends_on:
+      mautic_web:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - mautic_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  mailpit:
+    image: axllent/mailpit
+    container_name: ${COMPOSE_PROJECT_NAME}-mailpit
+    restart: unless-stopped
+    volumes:
+      - ./volumes/mailpit/data:/data
+    ports:
+      - 8025:8025
+      - 1025:1025
+    environment:
+      SHELL: /bin/bash
+      MP_MAX_MESSAGES: 5000
+      MP_DATABASE: /data/mailpit.db
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+    healthcheck:
+      test: |
+        /bin/sh -c '
+        nc -z localhost 1025 &&
+        wget -q --spider http://localhost:8025/ ||
+        exit 1'
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    networks:
+      - mautic_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  postfix:
+    build:
+      context: .
+      dockerfile: Dockerfile.postfix
+      args:
+        CERT_SUBJ: ${CERT_SUBJ}
+    container_name: postfix
+    hostname: ${SMTP_HOST}
+    restart: on-failure
+    environment:
+      - SHELL=/bin/bash
+      - TZ=${TZ}
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT}
+      - SMTP_DOMAIN=${SMTP_DOMAIN}
+      - SMTP_TEST_FROM=${SMTP_TEST_FROM}
+      - SMTP_TEST_TO=${SMTP_TEST_TO}
+      - POSTFIX_USER=${POSTFIX_USER}
+      - POSTFIX_PASSWORD=${POSTFIX_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "if ! tail -n 10 /var/log/mail.log | grep -i 'error'; then exit 0; else exit 1; fi"]
+      interval: 1m30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - mautic_network
+
+  nginxproxymanager:
+    image: 'jc21/nginx-proxy-manager:latest'
+    container_name: nginx-proxy-manager
+    restart: always
+    ports:
+      - '80:80'
+      - '81:81'
+      - '443:443'
+    volumes:
+      - ./volumes/nginxproxymanager/data:/data
+      - ./volumes/nginxproxymanager/letsencrypt:/etc/letsencrypt
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost || exit 1"]
+      interval: 1m30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - mautic_network
+
+# Network configuration
+networks:
+  mautic_network:
+    name: ${COMPOSE_PROJECT_NAME}-docker
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.20.0.0/16

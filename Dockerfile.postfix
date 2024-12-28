@@ -1,0 +1,68 @@
+FROM alpine:latest
+
+# Adicionar o repositório testing e instalar o Postfix, ca-certificates, swaks, gettext, dovecot, rsyslog, tzdata
+RUN apk update && \
+    echo "https://dl-cdn.alpinelinux.org/alpine/edge/community" >> /etc/apk/repositories && \
+    echo "https://dl-cdn.alpinelinux.org/alpine/edge/testing" >> /etc/apk/repositories && \
+    apk add --no-cache \
+    postfix \
+    ca-certificates \
+    swaks \
+    gettext \
+    rsyslog \
+    tzdata \
+    openssl \
+    mailx \
+    dovecot \
+    lmdb \
+    openssl \
+    openssl-dev \
+    perl \
+    perl-dev \
+    perl-net-ssleay
+
+ARG TZ
+RUN ln -sf /usr/share/zoneinfo/$TZ /etc/localtime && \
+    echo $TZ > /etc/timezone
+
+ARG CERT_SUBJ
+ENV CERT_SUBJ=${CERT_SUBJ}
+
+RUN newaliases
+
+RUN echo "mail.* /var/log/mail.log" >> /etc/rsyslog.conf
+
+RUN mkdir -p /etc/postfix && mkdir -p /var/mail && \
+    mkdir -p /etc/dovecot && \
+    mkdir -p /var/spool/rsyslog && \
+    if ! getent group vmail > /dev/null; then addgroup -S vmail; fi && \
+    if ! getent passwd vmail > /dev/null; then adduser -S -D -H -h /var/mail -s /sbin/nologin -G vmail vmail; fi && \
+    chown -R vmail:vmail /var/mail
+
+RUN mkdir -p /var/spool/postfix/private && \
+    chown postfix:postfix /var/spool/postfix/private && \
+    chmod 700 /var/spool/postfix/private
+
+RUN openssl genpkey -algorithm RSA -out /etc/ssl/private/postfix_key.pem && \
+    openssl req -new -key /etc/ssl/private/postfix_key.pem -out /etc/ssl/private/postfix.csr -subj "$CERT_SUBJ" && \
+    openssl x509 -req -days 365 -in /etc/ssl/private/postfix.csr -signkey /etc/ssl/private/postfix_key.pem -out /etc/ssl/certs/postfix_cert.pem && \
+    rm /etc/ssl/private/postfix.csr && \
+    chmod 600 /etc/ssl/private/postfix_key.pem && chmod 600 /etc/ssl/certs/postfix_cert.pem
+
+# COPY postfix/cert/postfix_cert.pem /etc/ssl/private/postfix_key.pem
+# COPY postfix/cert/postfix_cert.pem /etc/ssl/certs/postfix_cert.pem
+# RUN chmod 600 /etc/ssl/private/postfix_key.pem && \
+#     chmod 600 /etc/ssl/certs/postfix_cert.pem && \
+#     update-ca-certificates
+
+COPY smtp-test.sh /smtp-test.sh
+COPY rsyslog.conf /etc/rsyslog.conf
+COPY main.cf.template /etc/postfix/main.cf.template
+COPY dovecot-users /etc/dovecot/users.template
+COPY dovecot.conf /etc/dovecot/dovecot.conf
+COPY entrypoint.postfix.sh /entrypoint.sh
+COPY master.cf /etc/postfix/master.cf
+
+RUN chmod +x /smtp-test.sh /entrypoint.sh
+
+ENTRYPOINT ["/bin/sh", "/entrypoint.sh"]
