@@ -1,3 +1,5 @@
+myhostname = $SMTP_DOMAIN
+
 # Network Settings
 inet_interfaces = all
 inet_protocols = ipv4
