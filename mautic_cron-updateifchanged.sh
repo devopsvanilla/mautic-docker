@@ -7,7 +7,7 @@
 
 # Replace these lines
 apt-get update
-apt-get install inotify-tools
+apt-get install -y inotify-tools
 
 
 # Default jobs path

@@ -1,0 +1,6 @@
+{
+    "name": "Mautic Sandbox Tunnel",
+    "remoteHost": "127.0.0.1",
+    "remotePort": 8083,
+    "localPort": 9090
+}

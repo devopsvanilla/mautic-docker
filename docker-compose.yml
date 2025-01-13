@@ -5,12 +5,11 @@ x-mautic-volumes: &mautic-volumes
   - ./volumes/mautic/media/files:/var/www/html/docroot/media/files:z
   - ./volumes/mautic/media/images:/var/www/html/docroot/media/images:z
   - ./volumes/mautic/cron:/opt/mautic/cron:z
-  - ./volumes/mautic/ip_data:/var/www/html/var/cache/prod/ip_data:z
-  - ./GeoIP.conf:/var/www/html/config/GeoIP.conf
   - ./mautic_web-entrypoint_custom.sh:/entrypoint_custom_web.sh
+  - ./mautic_worker-entrypoint_custom.sh:/entrypoint_custom_worker.sh
   - ./mautic_cron-entrypoint_custom.sh:/entrypoint_custom_cron.sh
   - ./mautic_cron-updateifchanged.sh:/mautic_cron-updateifchanged.sh
-  #- ./postfix/cert/postfix_cert.pem:/usr/local/share/ca-certificates/postfix_cert.crt
+  - ./GeoIP.conf.template:/GeoIP.conf.template
 
 services:
   # MySQL Database Service
@@ -27,8 +26,10 @@ services:
       - MYSQL_PASSWORD=${MYSQL_PASSWORD}
     volumes:
       - ./volumes/mysql:/var/lib/mysql
+    ports:
+      - ${MYSQL_PORT}:${MYSQL_PORT}
     healthcheck:
-      test: mysqladmin --user=$$MYSQL_USER --password=$$MYSQL_PASSWORD ping
+      test: mysqladmin --user=$MYSQL_USER --password=$MYSQL_PASSWORD ping
       start_period: 360s
       interval: 10s
       timeout: 5s
@@ -60,6 +61,8 @@ services:
       - RABBITMQ_DEFAULT_USER=${RABBITMQ_DEFAULT_USER}
       - RABBITMQ_DEFAULT_PASS=${RABBITMQ_DEFAULT_PASS}
       - RABBITMQ_DEFAULT_VHOST=${RABBITMQ_DEFAULT_VHOST}
+      - RABBITMQ_DEFAULT_MESSAGESQUEUE=${RABBITMQ_DEFAULT_MESSAGESQUEUE}
+      - RABBITMQ_DEFAULT_FAILEDQUEUE=${RABBITMQ_DEFAULT_FAILEDQUEUE}
     ports:
       - "${RABBITMQ_NODE_PORT:-5672}:5672"
       - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
@@ -79,6 +82,18 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
+    # command: >
+    #   sh -c "
+    #     while ! rabbitmqctl status; do
+    #       sleep 1
+    #     done;
+
+    #     rabbitmqctl add_vhost ${RABBITMQ_DEFAULT_VHOST}/${RABBITMQ_DEFAULT_MESSAGESQUEUE} &&
+    #     rabbitmqctl add_vhost ${RABBITMQ_DEFAULT_VHOST}/${RABBITMQ_DEFAULT_FAILEDQUEUE} &&
+
+    #     rabbitmqctl set_permissions -p ${RABBITMQ_DEFAULT_VHOST}/${RABBITMQ_DEFAULT_MESSAGESQUEUE} user '.*' '.*' '.*'
+    #     rabbitmqctl set_permissions -p ${RABBITMQ_DEFAULT_VHOST}/${RABBITMQ_DEFAULT_FAILEDQUEUE} user '.*' '.*' '.*'
+    #   "
     networks:
       - mautic_network
     logging:
@@ -89,7 +104,7 @@ services:
 
   # Mautic Web Application
   mautic_web:
-    image: mautic/mautic:5.2.1-apache
+    image: mautic/mautic:5.1.1-apache
     container_name: ${COMPOSE_PROJECT_NAME}-mautic_web
     hostname: mautic-web
     restart: unless-stopped
@@ -125,8 +140,6 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
-      postfix:
-        condition: service_healthy
     networks:
       - mautic_network
     logging:
@@ -137,8 +150,8 @@ services:
 
   # Mautic Cron Service
   mautic_cron:
-    image: mautic/mautic:5.2.1-apache
-    container_name: ${COMPOSE_PROJECT_NAME}-mautic_cron
+    image: mautic/mautic:5.1.1-apache
+    container_name: ${COMPOSE_PROJECT_NAME}-mautic_cronrm
     restart: unless-stopped
     links:
       - db:mysql
@@ -172,7 +185,7 @@ services:
 
   # Mautic Worker Service
   mautic_worker:
-    image: mautic/mautic:5.2.1-apache
+    image: mautic/mautic:5.1.1-apache
     restart: unless-stopped
     links:
       - db:mysql
@@ -186,6 +199,7 @@ services:
       - DOCKER_MAUTIC_WORKERS_CONSUME_FAILED=2
     env_file:
       - .mautic_env
+    command: ["/entrypoint_custom_worker.sh"]
     deploy:
       resources:
         limits:
@@ -206,95 +220,6 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-
-  mailpit:
-    image: axllent/mailpit
-    container_name: ${COMPOSE_PROJECT_NAME}-mailpit
-    restart: unless-stopped
-    volumes:
-      - ./volumes/mailpit/data:/data
-    ports:
-      - 8025:8025
-      - 1025:1025
-    environment:
-      SHELL: /bin/bash
-      MP_MAX_MESSAGES: 5000
-      MP_DATABASE: /data/mailpit.db
-      MP_SMTP_AUTH_ACCEPT_ANY: 1
-      MP_SMTP_AUTH_ALLOW_INSECURE: 1
-    healthcheck:
-      test: |
-        /bin/sh -c '
-        nc -z localhost 1025 &&
-        wget -q --spider http://localhost:8025/ ||
-        exit 1'
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-    deploy:
-      resources:
-        limits:
-          cpus: '1'
-          memory: 512M
-        reservations:
-          cpus: '0.5'
-          memory: 256M
-    networks:
-      - mautic_network
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  postfix:
-    build:
-      context: .
-      dockerfile: Dockerfile.postfix
-      args:
-        CERT_SUBJ: ${CERT_SUBJ}
-    container_name: postfix
-    hostname: ${SMTP_HOST}
-    restart: on-failure
-    environment:
-      - SHELL=/bin/bash
-      - TZ=${TZ}
-      - SMTP_HOST=${SMTP_HOST}
-      - SMTP_PORT=${SMTP_PORT}
-      - SMTP_DOMAIN=${SMTP_DOMAIN}
-      - SMTP_TEST_FROM=${SMTP_TEST_FROM}
-      - SMTP_TEST_TO=${SMTP_TEST_TO}
-      - POSTFIX_USER=${POSTFIX_USER}
-      - POSTFIX_PASSWORD=${POSTFIX_PASSWORD}
-    healthcheck:
-      test: ["CMD-SHELL", "if ! tail -n 10 /var/log/mail.log | grep -i 'error'; then exit 0; else exit 1; fi"]
-      interval: 1m30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-    networks:
-      - mautic_network
-
-  nginxproxymanager:
-    image: 'jc21/nginx-proxy-manager:latest'
-    container_name: nginx-proxy-manager
-    restart: always
-    ports:
-      - '80:80'
-      - '81:81'
-      - '443:443'
-    volumes:
-      - ./volumes/nginxproxymanager/data:/data
-      - ./volumes/nginxproxymanager/letsencrypt:/etc/letsencrypt
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost || exit 1"]
-      interval: 1m30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-    networks:
-      - mautic_network
 
 # Network configuration
 networks:

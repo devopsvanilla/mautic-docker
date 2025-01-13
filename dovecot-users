@@ -1,1 +1,0 @@
-${POSTFIX_USER}:{plain}${POSTFIX_PASSWORD}

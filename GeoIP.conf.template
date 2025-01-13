@@ -4,11 +4,11 @@
 # https://dev.maxmind.com/geoip/updating-databases.
 
 # `AccountID` is from your MaxMind account.
-AccountID 0000000
+AccountID ${MAXMIND_ACCOUNTID}
 
 # Replace YOUR_LICENSE_KEY_HERE with an active license key associated
 # with your MaxMind account.
-LicenseKey XXXXXXXXXXXXXXXXXXXXXXXXXXX
+LicenseKey ${MAXMIND_LICENSEKEY}
 
 # `EditionIDs` is from your MaxMind account.
 EditionIDs GeoLite2-ASN GeoLite2-City GeoLite2-Country

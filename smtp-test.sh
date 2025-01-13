@@ -12,16 +12,16 @@ else
         [ -z "${SMTP_PORT}" ] || \
         [ -z "${SMTP_TEST_FROM}" ] || \
         [ -z "${SMTP_TEST_TO}" ] || \
-        [ -z "${POSTFIX_USER}" ] || \
-        [ -z "${POSTFIX_PASSWORD}" ]; then
+        [ -z "${SMTP_USER}" ] || \
+        [ -z "${SMTP_PASSWORD}" ]; then
         echo "Error: Environment variables are not set and .env file is missing."
     else
         smtp_host="${SMTP_HOST}"
         smtp_port="${SMTP_PORT}"
         smtp_test_from="${SMTP_TEST_FROM}"
         smtp_test_to="${SMTP_TEST_TO}"
-        postfix_user="${POSTFIX_USER}"
-        postfix_password="${POSTFIX_PASSWORD}"
+        postfix_user="${SMTP_USER}"
+        postfix_password="${SMTP_PASSWORD}"
 
     fi
 fi

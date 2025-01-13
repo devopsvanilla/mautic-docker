@@ -12,27 +12,9 @@ Also adds the possibility of importing files in background (See mautic_web-entry
 - [Docker Engine 20.10.0 or newer](https://docs.docker.com/get-started/get-docker/)
 - [Docker Compose v2.0.0 or newer](https://docs.docker.com/compose/install/)
 - [Git (for cloning the repository)](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git)
+- [Github PAT](./docs/composer-ghpat.md) for downloading composer packages
+- [MaxMind Account ID e License Key](https://support.maxmind.com/hc/en-us/articles/4407099783707-Create-an-Account) to download GeoIPLite databse
 
-## Directory Structure
-```
-rabbitmq-worker/                     # Root project directory
-├── .env                             # Docker Compose Global environment variables
-├── .mautic_env                      # Docker Compose Mautic specific environment variables
-├── docker-compose.yml               # Docker Compose configuration file
-├── mautic_web-entrypoint_custom.sh  # Custom Docker Image Entrypoint for Docker Mautic Image used in Web container
-├── undeploy.sh                      # Undeploy application from you Docker Host
-├── volumes/                         # Created at execution for container storage
-│   ├── mautic/                      # Mautic specific shared directories
-│   │   ├── config/                  # Configuration files
-│   │   ├── cron/                    # Cron files
-│   │   ├── logs/                    # Application logs
-│   │   └── media/                   # Media storage
-│   │       ├── files/               # Uploaded files
-│   │       └── images/              # Uploaded images
-│   ├── mysql/                       # MySQL data storage
-│   ├── rabbitmq/                    # RabbitMQ data storage
-└── README.md                        # This file instructions
-```
 
 ## Configuration
 
@@ -48,41 +30,9 @@ mkdir -p volumes/mautic/{config,cron,media/{files,images}}
 cp .env.example .env
 cp .mautic_env.example .mautic_env
 ```
-3. Configure the .env file with your database settings:
-```bash
-COMPOSE_PROJECT_NAME=rabbitmq-worker
-COMPOSE_NETWORK=${COMPOSE_PROJECT_NAME}-docker
+3. Configure the ```.env``` file with your informations
 
-MYSQL_HOST=db.${COMPOSE_NETWORK}
-MYSQL_PORT=3306
-MYSQL_DATABASE=mautic_db
-MYSQL_USER=mautic_db_user
-MYSQL_PASSWORD=mautic_db_pwd
-MYSQL_ROOT_PASSWORD=changeme
-
-PHP_INI_VALUE_MEMORY_LIMIT=1536M
-
-RABBITMQ_DEFAULT_USER=mautic
-RABBITMQ_DEFAULT_PASS=mautic
-RABBITMQ_DEFAULT_VHOST=mautic
-RABBITMQ_NODE_PORT=5672
-RABBITMQ_MANAGEMENT_PORT=15672
-```
-
-4. Configure the .mautic_env file with RabbitMQ settings:
-```bash
-MAUTIC_DB_HOST="${MYSQL_HOST}"
-MAUTIC_DB_PORT="${MYSQL_PORT}"
-MAUTIC_DB_DATABASE="${MYSQL_DATABASE}"
-MAUTIC_DB_USER="${MYSQL_USER}"
-MAUTIC_DB_PASSWORD="${MYSQL_PASSWORD}"
-
-MAUTIC_MESSENGER_DSN_EMAIL="amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@rabbitmq:5672/mautic/messages"
-MAUTIC_MESSENGER_DSN_HIT="amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@rabbitmq:5672/mautic/messages"
-
-DOCKER_MAUTIC_RUN_MIGRATIONS=false
-DOCKER_MAUTIC_LOAD_TEST_DATA=false
-```
+4. Configure the ```.mautic_env``` file with your informations
 
 5. Change sections variables in <b><i>enviroment</i></b> of  <b>docker-compose.yml</b> file for specific settings of each container and also the resources limits of each service as CPU and RAM.
 
@@ -91,6 +41,7 @@ DOCKER_MAUTIC_LOAD_TEST_DATA=false
 1. Start the services:
 ```bash
 docker compose up -d
+bash install-ses-deps.sh #To use the AWS SES service as SMTP Sender
 ```
 2. Monitor the startup process:
 ```bash
@@ -98,7 +49,7 @@ docker compose up -d
 ````
 3. Access Mautic:
 
-- Web Interface: http://localhost:8003
+- Web Interface: http://localhost:8003 (In the first access the database and the user will be created for access.)
 
 - RabbitMQ Management Interface: http://localhost:15672 (default credentials: guest/guest)
 
@@ -117,17 +68,9 @@ docker compose logs rabbitmq
 
 Backup for all services can be done from the directory [./volumes](./volumes) created at the Docker Engine host.
 
-
-## Scaling Workers
-
-#### To scale the number of worker containers:
-```bash
-docker compose up -d --scale mautic_worker=3
-```
-
 ## Undeploy containers
 
-Undeplay Containers and delete all associated resources:
+Undeploy Containers and delete all associated resources:
 ```bash
 bash undeploy.sh
 ```
@@ -154,3 +97,14 @@ docker compose ps
 - [Mautic at GitHub](https://github.com/mautic)
 - [RabbitMQ Documentation](https://www.rabbitmq.com/docs)
 - [Docker Documentation](https://docs.docker.com/compose/)
+___
+## 🛈 Final words
+
+_Tainage: The solutions mentioned are intellectual ownership of their respective maintainers.It is essential to respect and follow the licenses of use associated with each of them._
+
+_ This implementation is not intended for use in production and does not consider the essential requirements for the processing of massive email campaigns.The purpose of this project is to allow the functional evaluations._
+
+_Enouncement of responsibility: We are not responsible for any damage, loss or problem arising from the use of the mentioned solutions.Compliance with use licenses is the sole responsibility of users._
+___
+
+Feito com 💙 por [DevVanilla.guru](https://devopsvanilla.guru)

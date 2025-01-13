@@ -1,6 +1,5 @@
 .env
 .mautic_env
-postfix/cert
 volumes
 GeoIP.conf
 google-tag.js
