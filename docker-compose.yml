@@ -104,7 +104,7 @@ services:
 
   # Mautic Web Application
   mautic_web:
-    image: mautic/mautic:5.1.1-apache
+    image: mautic/mautic:5.2.3-apache
     container_name: ${COMPOSE_PROJECT_NAME}-mautic_web
     hostname: mautic-web
     restart: unless-stopped
@@ -150,7 +150,7 @@ services:
 
   # Mautic Cron Service
   mautic_cron:
-    image: mautic/mautic:5.1.1-apache
+    image: mautic/mautic:5.2.3-apache
     container_name: ${COMPOSE_PROJECT_NAME}-mautic_cronrm
     restart: unless-stopped
     links:
@@ -185,7 +185,7 @@ services:
 
   # Mautic Worker Service
   mautic_worker:
-    image: mautic/mautic:5.1.1-apache
+    image: mautic/mautic:5.2.3-apache
     restart: unless-stopped
     links:
       - db:mysql
